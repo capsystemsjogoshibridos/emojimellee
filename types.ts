@@ -1,4 +1,3 @@
-
 export interface CardData {
   id: string;
   name: string;
@@ -56,8 +55,9 @@ export interface GameState {
   p1HpAnim: string;
   p2HpAnim: string;
 
-  // Guest -> Host communication
-  guestAction?: { type: 'EMOJI_SELECT'; payload: string } | { type: 'CLEAR_EMOJI' };
+  // Guest -> Host communication (and other actions)
+  action?: { type: 'JOIN', payload: OnlinePlayer } | { type: 'EMOJI_SELECT', payload: string };
+
 
   // Sync info
   lastUpdate: number;
