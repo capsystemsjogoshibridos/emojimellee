@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Criador de Cartas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              'bebas': ['"Bebas Neue"', 'cursive'],
+              'roboto': ['Roboto', 'sans-serif'],
+            },
+            animation: {
+              'glow': 'glow 2s ease-in-out infinite alternate',
+              'lunge-right': 'lunge-right 1s ease-in-out',
+              'lunge-left': 'lunge-left 1s ease-in-out',
+              'disintegrate': 'disintegrate 1s ease-in forwards',
+              'winner-glow': 'winner-glow 1.5s ease-in-out infinite',
+              'fade-in': 'fade-in 0.5s ease-out forwards',
+              'hp-flash': 'hp-flash 0.5s ease-out',
+            },
+            keyframes: {
+              'fade-in': {
+                '0%': { opacity: 0, transform: 'translateY(10px)' },
+                '100%': { opacity: 1, transform: 'translateY(0)' },
+              },
+              glow: {
+                '0%, 100%': { boxShadow: '0 0 10px #a855f7, 0 0 20px #a855f7, 0 0 30px #a855f7' },
+                '50%': { boxShadow: '0 0 20px #d8b4fe, 0 0 30px #d8b4fe, 0 0 40px #d8b4fe' },
+              },
+              'lunge-right': {
+                '0%': { transform: 'translate(0, 0) scale(1.05)' },
+                '50%': { transform: 'translate(20px, 0) scale(1.1)' },
+                '100%': { transform: 'translate(0, 0) scale(1.05)' },
+              },
+              'lunge-left': {
+                '0%': { transform: 'translate(0, 0) scale(1.05)' },
+                '50%': { transform: 'translate(-20px, 0) scale(1.1)' },
+                '100%': { transform: 'translate(0, 0) scale(1.05)' },
+              },
+              disintegrate: {
+                '0%': { opacity: 1, transform: 'scale(1)', filter: 'blur(0)' },
+                '100%': { opacity: 0, transform: 'scale(0.8) rotate(15deg)', filter: 'blur(8px)' },
+              },
+              'winner-glow': {
+                '0%': { boxShadow: '0 0 15px #fde047, 0 0 30px #facc15, 0 0 45px #eab308' },
+                '50%': { boxShadow: '0 0 30px #fef08a, 0 0 45px #fde047, 0 0 60px #facc15' },
+                '100%': { boxShadow: '0 0 15px #fde047, 0 0 30px #facc15, 0 0 45px #eab308' },
+              },
+              'hp-flash': {
+                '0%, 100%': { transform: 'scale(1)', color: 'inherit' },
+                '50%': { transform: 'scale(1.2)', color: '#ef4444' },
+              },
+            }
+          }
+        }
+      }
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.1.1",
+    "react/": "https://aistudiocdn.com/react@^19.1.1/",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-gray-900">
+    <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
