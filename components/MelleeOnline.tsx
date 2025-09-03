@@ -1,6 +1,6 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-// FIX: Import BattleRecord type to be used in onRoundEnd prop.
-import { CardData, GameState, LobbyInfo, OnlinePlayer, BattleRecord } from '../types';
+import { CardData, GameState, OnlinePlayer, BattleRecord } from '../types';
 import CardPreview from './CardPreview';
 import { EmojiHappyIcon, ArrowLeftIcon } from './Icons';
 import EmojiPicker from './EmojiPicker';
@@ -11,9 +11,7 @@ interface MelleeOnlineProps {
   pseudonym: string;
 }
 
-// --- Constants and WebSocket Service ---
-const LOBBY_WS_URL = 'wss://pico-db.fly.dev/emoji-mellee-lobby-v3';
-const GAME_WS_URL_PREFIX = 'wss://pico-db.fly.dev/emoji-mellee-game-v3-';
+const GAME_WS_URL_PREFIX = 'wss://pico-db.fly.dev/emoji-mellee-game-v4-';
 
 const initialGameState: Omit<GameState, 'gameId' | 'lastUpdate'> = {
   hostId: null, guestId: null, players: {}, spectators: {},
@@ -22,7 +20,7 @@ const initialGameState: Omit<GameState, 'gameId' | 'lastUpdate'> = {
   p1Anim: '', p2Anim: '', p1HpAnim: '', p2HpAnim: '', action: undefined,
 };
 
-// --- UI Subcomponents ---
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const PlayerStatus: React.FC<{ player: 'P1' | 'P2', hp: number, animation: string, name?: string }> = ({ player, hp, animation, name }) => {
     const isP1 = player === 'P1';
@@ -65,392 +63,326 @@ const EmojiInput: React.FC<{
     );
 };
 
-const LobbyUI: React.FC<{
-  lobbyList: LobbyInfo[];
-  onCreate: () => void;
-  onJoin: (gameId: string) => void;
-  pseudonym: string;
-}> = ({ lobbyList, onCreate, onJoin, pseudonym }) => {
-  return (
-    <div className="max-w-md mx-auto bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-2xl animate-fade-in">
-      <h2 className="text-3xl font-bebas text-purple-300 text-center tracking-wider">Lobby Online</h2>
-      <p className="text-center text-gray-400 mb-6">Bem-vindo, {pseudonym}!</p>
-      
-      <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
-        {lobbyList.length > 0 ? (
-          lobbyList.map(game => (
-            <div key={game.gameId} className="flex justify-between items-center bg-gray-700 p-3 rounded-lg">
-              <div>
-                <p className="font-bold text-white">{game.hostPseudonym}'s Game</p>
-                <p className={`text-sm ${game.status === 'waiting' ? 'text-green-400' : 'text-yellow-400'}`}>
-                  {game.status === 'waiting' ? 'Aguardando oponente' : 'Em progresso'}
-                </p>
-              </div>
-              <button
-                onClick={() => onJoin(game.gameId)}
-                disabled={game.status !== 'waiting'}
-                className="px-4 py-1 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
-              >
-                Entrar
-              </button>
+const SetupUI: React.FC<{
+    mode: 'host' | 'join';
+    setMode: (mode: 'host' | 'join') => void;
+    gameId: string | null;
+    onJoin: (id: string) => void;
+}> = ({ mode, setMode, gameId, onJoin }) => {
+    const [joinInput, setJoinInput] = useState('');
+
+    const handleJoinSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if(joinInput.trim()) {
+            onJoin(joinInput.trim());
+        }
+    }
+
+    if (mode === 'host') {
+        return (
+            <div className="text-center max-w-md mx-auto">
+                <h2 className="text-2xl font-bebas text-purple-300 tracking-wider">Seu Jogo está Pronto!</h2>
+                <p className="text-gray-400 mt-2">Compartilhe o ID abaixo com seu amigo para ele poder entrar.</p>
+                <div className="my-6 p-4 bg-gray-900 rounded-lg border border-dashed border-gray-600">
+                    <p className="text-sm text-gray-500">ID DO JOGO</p>
+                    <p className="text-3xl font-bold tracking-widest text-white">{gameId || 'Gerando...'}</p>
+                </div>
+                <p className="text-yellow-400 animate-pulse">Aguardando oponente...</p>
+                <button onClick={() => setMode('join')} className="mt-8 text-purple-400 hover:text-purple-300">
+                    Quer entrar em um jogo?
+                </button>
             </div>
-          ))
-        ) : (
-          <p className="text-center text-gray-500 py-4">Nenhum jogo disponível. Crie um!</p>
-        )}
-      </div>
+        )
+    }
 
-      <button
-        onClick={onCreate}
-        className="mt-6 w-full py-3 bg-green-600 text-white font-bebas text-xl tracking-wider rounded-lg hover:bg-green-700 transition-colors shadow-lg"
-      >
-        Criar Jogo
-      </button>
-    </div>
-  );
-};
-
-
-// --- Main Component ---
+    return (
+        <div className="text-center max-w-md mx-auto">
+            <h2 className="text-2xl font-bebas text-purple-300 tracking-wider">Entrar em um Jogo</h2>
+            <p className="text-gray-400 mt-2">Digite o ID do jogo que seu amigo compartilhou.</p>
+            <form onSubmit={handleJoinSubmit} className="my-6 flex flex-col items-center gap-4">
+                <input
+                    type="text"
+                    value={joinInput}
+                    onChange={(e) => setJoinInput(e.target.value)}
+                    className="w-full max-w-xs text-center p-3 bg-gray-700 border-gray-600 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-lg text-white tracking-widest"
+                    placeholder="Digite o ID do Jogo"
+                    required
+                />
+                <button type="submit" className="px-8 py-3 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors font-bebas text-xl tracking-wider">
+                    Entrar
+                </button>
+            </form>
+            <button onClick={() => setMode('host')} className="mt-4 text-purple-400 hover:text-purple-300">
+                Quer criar um novo jogo?
+            </button>
+        </div>
+    )
+}
 
 const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pseudonym }) => {
-    const [view, setView] = useState<'lobby' | 'game'>('lobby');
-    const [lobbyList, setLobbyList] = useState<LobbyInfo[]>([]);
+    const [setupMode, setSetupMode] = useState<'host' | 'join'>('host');
     const [gameState, setGameState] = useState<GameState | null>(null);
     const [myId] = useState(sessionStorage.getItem('myId') || `user-${Date.now()}-${Math.random()}`);
     const [myRole, setMyRole] = useState<'host' | 'guest' | null>(null);
     const [isP1PickerOpen, setIsP1PickerOpen] = useState(false);
     const [isP2PickerOpen, setIsP2PickerOpen] = useState(false);
+    const [isConnecting, setIsConnecting] = useState(false);
 
-    const lobbyWs = useRef<WebSocket | null>(null);
     const gameWs = useRef<WebSocket | null>(null);
-    const hostGameLoop = useRef<ReturnType<typeof setInterval> | null>(null);
-    const myRoleRef = useRef(myRole);
+    const hostStateRef = useRef(gameState);
+    const battleProcessor = useRef<Promise<void> | null>(null);
 
     useEffect(() => {
-        myRoleRef.current = myRole;
-    }, [myRole]);
+        hostStateRef.current = gameState;
+    }, [gameState]);
 
     useEffect(() => {
         sessionStorage.setItem('myId', myId);
     }, [myId]);
 
-    // --- WebSocket Management ---
-    const connectToLobby = useCallback(() => {
-        if (lobbyWs.current?.readyState === WebSocket.OPEN) return;
-        if (lobbyWs.current) lobbyWs.current.close();
-        
-        const ws = new WebSocket(LOBBY_WS_URL);
-        ws.onopen = () => console.log('Connected to lobby');
-        ws.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                const lobbies: LobbyInfo[] = Object.values(data).filter(Boolean) as LobbyInfo[];
-                const now = Date.now();
-                const freshLobbies = lobbies.filter(l => (now - l.lastUpdate) < 30000); 
-                setLobbyList(freshLobbies);
-            } catch (error) {
-                console.error("Failed to parse lobby data:", error)
-            }
-        };
-        ws.onclose = () => {
-            lobbyWs.current = null;
-            // Always try to reconnect while the component is mounted.
-            // The cleanup function in the main useEffect will prevent this on unmount.
-            console.log('Disconnected from lobby. Reconnecting...');
-            setTimeout(connectToLobby, 2000);
-        };
-        ws.onerror = (err) => {
-            console.error('Lobby WebSocket error:', err);
-            ws.close();
-        };
-        lobbyWs.current = ws;
-    }, []);
-
-    const connectToGame = useCallback((gameId: string) => {
+    const connectToGame = useCallback((gameId: string, onOpen: () => void) => {
         if (gameWs.current) gameWs.current.close();
+        setIsConnecting(true);
 
         const ws = new WebSocket(GAME_WS_URL_PREFIX + gameId);
-        ws.onopen = () => console.log(`Connected to game ${gameId}`);
+        ws.onopen = () => {
+            console.log(`Connected to game ${gameId}`);
+            setIsConnecting(false);
+            onOpen();
+        };
         ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-                const currentRole = myRoleRef.current;
-
-                // Guest always accepts the state from the host
-                if (currentRole === 'guest' && data.state) {
+                if (data.state) {
                     setGameState(data.state);
-                    return;
                 }
-
-                // Host processes actions from guest and merges them into its state
-                if (currentRole === 'host') {
-                    // Handle state messages (could be echoes or from other sources)
-                    if (data.state) {
-                         setGameState(currentState => {
-                            if (!currentState || data.state.lastUpdate > currentState.lastUpdate) {
-                                return data.state;
-                            }
-                            return currentState;
-                        });
-                    }
-                    // Handle action messages from the guest
-                    if (data.action) {
-                        setGameState(currentState => {
-                            if (!currentState || currentState.action) return currentState; // Don't overwrite an unprocessed action
-                            return { ...currentState, action: data.action };
-                        });
-                    }
+                if (myRole === 'host' && data.action) {
+                    setGameState(currentState => {
+                        if (!currentState || currentState.action) return currentState;
+                        return { ...currentState, action: data.action };
+                    });
                 }
-            } catch (error) {
-                console.error("Failed to parse game data:", error)
-            }
+            } catch (error) { console.error("Failed to parse game data:", error) }
         };
-        ws.onclose = () => {
-            gameWs.current = null;
-        };
-        ws.onerror = (err) => {
-            console.error('Game WebSocket error:', err);
-            ws.close();
-        }
+        ws.onclose = () => { gameWs.current = null; setIsConnecting(false); };
+        ws.onerror = (err) => { console.error('Game WebSocket error:', err); ws.close(); setIsConnecting(false); };
         gameWs.current = ws;
+    }, [myRole]);
+
+    const broadcastState = useCallback((state: GameState) => {
+        if (gameWs.current?.readyState === WebSocket.OPEN) {
+            gameWs.current.send(JSON.stringify({ state }));
+        }
     }, []);
 
-    // --- Lobby Connection Lifecycle ---
-    useEffect(() => {
-        connectToLobby();
-        return () => {
-            if (lobbyWs.current) {
-                lobbyWs.current.onclose = null; // Prevent reconnect on component unmount
-                lobbyWs.current.close();
-                lobbyWs.current = null;
-            }
-        };
-    }, [connectToLobby]);
-
-    const handleCreateGame = useCallback(() => {
-        const gameId = `game-${myId.substring(5, 10)}-${Date.now()}`;
+    const createGame = useCallback(() => {
+        const gameId = `g-${Math.random().toString(36).substring(2, 7)}`;
         const me: OnlinePlayer = { id: myId, pseudonym };
         const newGame: GameState = {
-            ...initialGameState,
-            gameId,
-            hostId: myId,
-            players: { [myId]: me },
-            lastUpdate: Date.now(),
+            ...initialGameState, gameId, hostId: myId, players: { [myId]: me }, lastUpdate: Date.now(),
         };
-        
-        const newLobbyInfo: LobbyInfo = { gameId, hostPseudonym: pseudonym, status: 'waiting', lastUpdate: Date.now() };
-        if (lobbyWs.current?.readyState === WebSocket.OPEN) {
-            lobbyWs.current.send(JSON.stringify({ [gameId]: newLobbyInfo }));
-        }
-
-        connectToGame(gameId);
         setMyRole('host');
-        setView('game');
-
-        setTimeout(() => {
-            if(gameWs.current?.readyState === WebSocket.OPEN) {
-                gameWs.current.send(JSON.stringify({ state: newGame }));
-            }
-        }, 500);
-        
-        // This will be set by the onmessage handler, but we set it locally for immediate UI update.
-        setGameState(newGame);
-    }, [myId, pseudonym, connectToGame]);
-
-    const handleJoinGame = useCallback((gameId: string) => {
-        const lobbyInfo = lobbyList.find(l => l.gameId === gameId);
-        if (!lobbyInfo) return;
-
-        const updatedLobbyInfo = { ...lobbyInfo, status: 'in-progress' as const, lastUpdate: Date.now() };
-        if (lobbyWs.current?.readyState === WebSocket.OPEN) {
-            lobbyWs.current.send(JSON.stringify({ [gameId]: updatedLobbyInfo }));
-        }
-
-        connectToGame(gameId);
+        connectToGame(gameId, () => {
+            setGameState(newGame);
+            broadcastState(newGame);
+        });
+    }, [myId, pseudonym, connectToGame, broadcastState]);
+    
+    const joinGame = useCallback((gameId: string) => {
         setMyRole('guest');
-        setView('game');
-
-        setTimeout(() => {
+        connectToGame(gameId, () => {
             const me: OnlinePlayer = { id: myId, pseudonym };
-            const joinAction = { type: 'JOIN', payload: me };
+            const joinAction = { type: 'JOIN' as const, payload: me };
             if (gameWs.current?.readyState === WebSocket.OPEN) {
-                // When a guest joins, it sends an action that will overwrite the server state.
-                // The host will receive this action, update the state, and broadcast the new full state.
                 gameWs.current.send(JSON.stringify({ action: joinAction }));
             }
-        }, 1000);
-    }, [myId, pseudonym, connectToGame, lobbyList]);
-
-    const handleLeaveGame = useCallback(() => {
-        const gameId = gameState?.gameId;
-        if (gameId && myRole === 'host' && lobbyWs.current) {
-            // Tell the lobby this game is gone.
-            lobbyWs.current.send(JSON.stringify({ [gameId]: null }));
-        }
+        });
+    }, [myId, pseudonym, connectToGame]);
+    
+    const leaveGame = useCallback(() => {
         if (gameWs.current) {
             gameWs.current.onclose = null;
             gameWs.current.close();
-            gameWs.current = null;
         }
-        if (hostGameLoop.current) clearInterval(hostGameLoop.current);
-
         setGameState(null);
         setMyRole(null);
-        setView('lobby');
-    }, [gameState, myRole]);
-
-
-    // Guest Join Handler (for Host)
+        setSetupMode('host'); // Default to hosting when returning
+    }, []);
+    
     useEffect(() => {
-      if(myRole === 'host' && gameState) {
-        const joinAction = gameState.action;
-        if(joinAction?.type === 'JOIN' && !gameState.guestId) {
-            const guestPlayer = joinAction.payload as OnlinePlayer;
-            const newState = {
-                ...gameState,
-                guestId: guestPlayer.id,
-                players: { ...gameState.players, [guestPlayer.id]: guestPlayer },
-                action: undefined // Clear the action
-            };
-            if(gameWs.current?.readyState === WebSocket.OPEN){
-                gameWs.current.send(JSON.stringify({ state: newState }));
-            }
-            if (lobbyWs.current?.readyState === WebSocket.OPEN) {
-                const lobbyInfoUpdate: LobbyInfo = {
-                    gameId: gameState.gameId,
-                    hostPseudonym: pseudonym,
-                    status: 'in-progress',
-                    lastUpdate: Date.now()
-                };
-                lobbyWs.current.send(JSON.stringify({ [gameState.gameId]: lobbyInfoUpdate }));
-            }
+        if (setupMode === 'host' && !gameState) {
+            createGame();
+        } else if (setupMode === 'join' && gameState) {
+            leaveGame(); // Clean up host game if switching to join
         }
-      }
-    }, [gameState, myRole, pseudonym]);
+    }, [setupMode, createGame, gameState, leaveGame]);
 
-
-    // --- Host Game Loop ---
     useEffect(() => {
-        if (myRole !== 'host' || !gameState?.gameId) {
-            if (hostGameLoop.current) clearInterval(hostGameLoop.current);
+        // Main host logic
+        if (myRole !== 'host' || !gameState) return;
+
+        let newState = { ...gameState };
+        let stateChanged = false;
+
+        // Process guest actions
+        if (newState.action) {
+            const action = newState.action;
+            if (action.type === 'JOIN' && !newState.guestId) {
+                const guest = action.payload;
+                newState.guestId = guest.id;
+                newState.players[guest.id] = guest;
+                newState.activePlayer = Math.random() < 0.5 ? 'P1' : 'P2';
+                newState.isTimerRunning = true;
+                newState.timer = 60;
+                stateChanged = true;
+            }
+            if (action.type === 'EMOJI_SELECT' && newState.activePlayer === 'P2' && Array.from(newState.p2Emoji).length < 3) {
+                newState.p2Emoji += action.payload;
+                const card = savedCards.find(c => c.combination === newState.p2Emoji);
+                if (card) {
+                    newState.p2Card = { ...card, currentEnergy: parseInt(card.energy, 10) };
+                    if (!newState.p1Card) {
+                        newState.activePlayer = 'P1';
+                        newState.timer = 60;
+                    }
+                }
+                stateChanged = true;
+            }
+            newState.action = undefined;
+        }
+
+        // BATTLE LOGIC TRIGGER
+        if (newState.p1Card && newState.p2Card && !newState.winner && !battleProcessor.current) {
+            const runBattle = async () => {
+                let battleState = { ...hostStateRef.current! };
+
+                battleState.isTimerRunning = false;
+                battleState.winner = "Batalha!";
+                setGameState(battleState); broadcastState(battleState);
+                await sleep(500);
+
+                battleState.p1Anim = 'animate-lunge-right';
+                battleState.p2Anim = 'animate-lunge-left';
+                setGameState(battleState); broadcastState(battleState);
+                await sleep(1500);
+
+                const card1 = battleState.p1Card!, card2 = battleState.p2Card!;
+                const p1Energy = card1.currentEnergy ?? parseInt(card1.energy, 10);
+                const p2Energy = card2.currentEnergy ?? parseInt(card2.energy, 10);
+                let winnerId: string | null = null;
+
+                if (p1Energy > p2Energy) {
+                    const diff = p1Energy - p2Energy;
+                    battleState.p2Hp = Math.max(0, battleState.p2Hp - diff);
+                    battleState.winner = `${card1.name} vence!`; winnerId = card1.id;
+                    battleState.p1Anim = 'animate-winner-glow'; battleState.p2Anim = 'animate-disintegrate';
+                    battleState.p2HpAnim = 'animate-hp-flash';
+                } else if (p2Energy > p1Energy) {
+                    const diff = p2Energy - p1Energy;
+                    battleState.p1Hp = Math.max(0, battleState.p1Hp - diff);
+                    battleState.winner = `${card2.name} vence!`; winnerId = card2.id;
+                    battleState.p2Anim = 'animate-winner-glow'; battleState.p1Anim = 'animate-disintegrate';
+                    battleState.p1HpAnim = 'animate-hp-flash';
+                } else {
+                    battleState.winner = 'Empate!';
+                    battleState.p1Anim = 'animate-disintegrate'; battleState.p2Anim = 'animate-disintegrate';
+                }
+                
+                onRoundEnd({ fighter1: card1, fighter2: card2, winnerId, mode: 'mellee' });
+                setGameState(battleState); broadcastState(battleState);
+                await sleep(500);
+                battleState.p1HpAnim = ''; battleState.p2HpAnim = '';
+                setGameState(battleState); broadcastState(battleState);
+                
+                await sleep(2500);
+
+                // Check for game over
+                if (battleState.p1Hp <= 0) {
+                    battleState.winner = `${battleState.players[battleState.guestId!].pseudonym} venceu!`;
+                } else if (battleState.p2Hp <= 0) {
+                    battleState.winner = `${battleState.players[battleState.hostId!].pseudonym} venceu!`;
+                } else {
+                    // Reset for next round
+                    battleState.p1Card = null; battleState.p2Card = null;
+                    battleState.p1Emoji = ''; battleState.p2Emoji = '';
+                    battleState.p1Anim = ''; battleState.p2Anim = '';
+                    battleState.winner = null;
+                    battleState.isTimerRunning = true;
+                    battleState.activePlayer = Math.random() < 0.5 ? 'P1' : 'P2';
+                    battleState.timer = 60;
+                }
+                setGameState(battleState); broadcastState(battleState);
+                battleProcessor.current = null;
+            };
+            battleProcessor.current = runBattle();
             return;
         }
 
-        hostGameLoop.current = setInterval(() => {
-            if (!gameWs.current || gameWs.current.readyState !== WebSocket.OPEN) return;
-            
-            setGameState(currentGameState => {
-                if (!currentGameState) return null;
-
-                let state = { ...currentGameState };
-                let updated = false;
-
-                // Process actions from guest
-                if (state.action && state.action.type === 'EMOJI_SELECT') {
-                    if (state.activePlayer === 'P2' && Array.from(state.p2Emoji).length < 3) {
-                        state.p2Emoji += state.action.payload;
-                        const card = savedCards.find(c => c.combination === state.p2Emoji);
-                        if (card) {
-                            state.p2Card = { ...card, currentEnergy: parseInt(card.energy, 10) };
-                            if (!state.p1Card) {
-                                state.activePlayer = 'P1';
-                                state.timer = 60;
-                            }
-                        }
-                    }
-                    state.action = undefined;
-                    updated = true;
-                }
-
-                if (state.isTimerRunning && !state.isPaused && !state.p1Card && !state.p2Card) {
-                    if (state.timer > 0) {
-                        state.timer--;
-                    } else {
-                        state.activePlayer = state.activePlayer === 'P1' ? 'P2' : 'P1';
-                        state.timer = 60;
-                    }
-                    updated = true;
-                }
-                
-                // Keep lobby informed with a heartbeat
-                if (lobbyWs.current?.readyState === WebSocket.OPEN) {
-                    const lobbyInfoUpdate: LobbyInfo = {
-                        gameId: state.gameId,
-                        hostPseudonym: pseudonym,
-                        status: state.guestId ? 'in-progress' : 'waiting',
-                        lastUpdate: Date.now()
-                    };
-                    lobbyWs.current.send(JSON.stringify({ [state.gameId]: lobbyInfoUpdate }));
-                }
-
-                if (updated) {
-                    const finalState = {...state, lastUpdate: Date.now() };
-                    if (gameWs.current?.readyState === WebSocket.OPEN) {
-                        gameWs.current.send(JSON.stringify({ state: finalState }));
-                    }
-                    return finalState;
-                }
-                return state;
-            });
-        }, 1000);
-
-        return () => {
-            if (hostGameLoop.current) clearInterval(hostGameLoop.current);
-        };
-    }, [myRole, gameState?.gameId, savedCards, pseudonym]);
-
-
-    const handleGameControl = () => {
-        if(myRole !== 'host' || !gameState || !gameWs.current) return;
-        let newState = {...gameState, lastUpdate: Date.now()};
-        if(!newState.isTimerRunning) {
-            if(!newState.guestId) { alert("Aguardando oponente..."); return; }
-            newState.isTimerRunning = true;
-            newState.isPaused = false;
-            newState.activePlayer = Math.random() < 0.5 ? 'P1' : 'P2';
-            newState.timer = 60;
-        } else {
-            newState.isPaused = !newState.isPaused;
+        if (stateChanged) {
+            newState.lastUpdate = Date.now();
+            broadcastState(newState);
         }
-        gameWs.current.send(JSON.stringify({ state: newState }));
-    };
+    }, [gameState, myRole, savedCards, broadcastState, onRoundEnd]);
+
+    // Timer interval for host
+    useEffect(() => {
+        if (myRole !== 'host') return;
+        const timerInterval = setInterval(() => {
+            const state = hostStateRef.current;
+            if (state && state.isTimerRunning && !state.isPaused && !state.winner) {
+                if (state.timer > 0) {
+                    setGameState(s => s ? {...s, timer: s.timer - 1} : null);
+                } else {
+                    setGameState(s => s ? {...s, timer: 60, activePlayer: s.activePlayer === 'P1' ? 'P2' : 'P1' } : null);
+                }
+            }
+        }, 1000);
+        return () => clearInterval(timerInterval);
+    }, [myRole]);
+
 
     const handleEmojiSelect = (emoji: string) => {
       if(!gameState || !gameWs.current) return;
+      const isMyTurnAsHost = myRole === 'host' && gameState.activePlayer === 'P1';
+      const isMyTurnAsGuest = myRole === 'guest' && gameState.activePlayer === 'P2';
 
-      if(myRole === 'host' && gameState.activePlayer === 'P1' && Array.from(gameState.p1Emoji).length < 3){
-         let newState = {...gameState, lastUpdate: Date.now()};
+      if (isMyTurnAsHost && Array.from(gameState.p1Emoji).length < 3) {
+         let newState = {...gameState};
          newState.p1Emoji += emoji;
          const matchedCard = savedCards.find(c => c.combination === newState.p1Emoji);
          if(matchedCard){
             newState.p1Card = { ...matchedCard, currentEnergy: parseInt(matchedCard.energy, 10) };
-            if(!newState.p2Card) {
-                newState.activePlayer = 'P2'; newState.timer = 60;
-            }
+            if(!newState.p2Card) { newState.activePlayer = 'P2'; newState.timer = 60; }
          }
-         gameWs.current.send(JSON.stringify({ state: newState }));
-      } else if (myRole === 'guest' && gameState.activePlayer === 'P2' && Array.from(gameState.p2Emoji).length < 3) {
-        const action = { type: 'EMOJI_SELECT', payload: emoji };
+         broadcastState(newState);
+      } else if (isMyTurnAsGuest && Array.from(gameState.p2Emoji).length < 3) {
+        const action = { type: 'EMOJI_SELECT' as const, payload: emoji };
         gameWs.current.send(JSON.stringify({ action }));
       }
     };
     
-  if (view === 'lobby') {
-    return <LobbyUI lobbyList={lobbyList} onCreate={handleCreateGame} onJoin={handleJoinGame} pseudonym={pseudonym} />
-  }
+    if (isConnecting) {
+        return <div className="text-center text-gray-400 p-8">Conectando...</div>;
+    }
 
-  if (view === 'game' && gameState) {
+    if (!gameState || !gameState.guestId) {
+        return (
+            <div className="animate-fade-in p-4">
+                <SetupUI mode={setupMode} setMode={setSetupMode} gameId={gameState?.gameId || null} onJoin={joinGame} />
+            </div>
+        )
+    }
+
+    // --- Game View ---
     return (
       <div className="animate-fade-in text-center p-4">
-        <button onClick={handleLeaveGame} className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600">
-            <ArrowLeftIcon className="w-4 h-4" /> Lobby
+        <button onClick={leaveGame} className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600">
+            <ArrowLeftIcon className="w-4 h-4" /> Sair
         </button>
 
         <div className="grid grid-cols-2 md:grid-cols-[1fr_auto_1fr] items-start gap-4 max-w-6xl mx-auto mt-8">
-          {/* Player 1 Area */}
           <div className="flex flex-col items-center gap-4">
-            <PlayerStatus player="P1" hp={gameState.p1Hp} animation={gameState.p1HpAnim} name={gameState.hostId ? gameState.players[gameState.hostId]?.pseudonym : ''} />
+            <PlayerStatus player="P1" hp={gameState.p1Hp} animation={gameState.p1HpAnim} name={gameState.players[gameState.hostId!]?.pseudonym} />
             <EmojiInput 
               emojis={gameState.p1Emoji} isPickerOpen={isP1PickerOpen} setIsPickerOpen={setIsP1PickerOpen}
               onEmojiSelect={handleEmojiSelect}
@@ -462,7 +394,6 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
             </div>
           </div>
           
-          {/* Center Area */}
           <div className="col-span-2 md:col-span-1 order-first md:order-none flex flex-col items-center gap-6 pt-4 md:pt-16">
             <div className="font-bebas text-7xl text-yellow-300 drop-shadow-lg">{gameState.isTimerRunning ? gameState.timer : '--'}</div>
             <div className="h-20 mt-4">
@@ -470,9 +401,8 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
             </div>
           </div>
           
-          {/* Player 2 Area */}
           <div className="flex flex-col items-center gap-4">
-            <PlayerStatus player="P2" hp={gameState.p2Hp} animation={gameState.p2HpAnim} name={gameState.guestId ? gameState.players[gameState.guestId]?.pseudonym : ''} />
+            <PlayerStatus player="P2" hp={gameState.p2Hp} animation={gameState.p2HpAnim} name={gameState.players[gameState.guestId!]?.pseudonym} />
             <EmojiInput 
               emojis={gameState.p2Emoji} isPickerOpen={isP2PickerOpen} setIsPickerOpen={setIsP2PickerOpen}
               onEmojiSelect={handleEmojiSelect}
@@ -480,25 +410,12 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
             />
             <div className="w-full h-[210px] md:h-[336px] flex justify-center items-center">
                 {gameState.p2Card ? <div className={`transform scale-[0.5] md:scale-[0.8] ${gameState.p2Anim}`}><CardPreview cardData={gameState.p2Card} /></div> : 
-                <div className={`w-[150px] h-[210px] md:w-[240px] md:h-[336px] rounded-2xl border-4 border-dashed flex items-center justify-center text-gray-500 transition-all ${gameState.activePlayer === 'P2' ? 'border-red-500 animate-pulse' : 'border-gray-700'}`}>{gameState.guestId ? 'Aguardando P2' : 'Vazio'}</div>}
+                <div className={`w-[150px] h-[210px] md:w-[240px] md:h-[336px] rounded-2xl border-4 border-dashed flex items-center justify-center text-gray-500 transition-all ${gameState.activePlayer === 'P2' ? 'border-red-500 animate-pulse' : 'border-gray-700'}`}>Aguardando P2</div>}
             </div>
           </div>
         </div>
-        
-        <div className="flex items-center justify-center gap-4 mt-8">
-            <button
-                onClick={handleGameControl}
-                disabled={myRole !== 'host' || !!gameState.winner}
-                className="px-6 py-2 bg-green-600 text-white font-bebas text-xl tracking-wider rounded-lg hover:bg-green-700 transition-colors shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed"
-            >
-                {gameState.isTimerRunning ? (gameState.isPaused ? 'Continuar' : 'Pausar') : 'Começar'}
-            </button>
-        </div>
       </div>
     );
-  }
-
-  return <div className="text-center text-gray-400 p-8">Conectando ao servidor...</div>;
 };
 
 export default MelleeOnline;
