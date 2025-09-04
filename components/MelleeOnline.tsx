@@ -11,8 +11,8 @@ interface MelleeOnlineProps {
   pseudonym: string;
 }
 
-const LOBBY_WS_URL = 'wss://pico-db.fly.dev/emoji-mellee-lobby-v5';
-const GAME_WS_URL_PREFIX = 'wss://pico-db.fly.dev/emoji-mellee-game-v5-';
+const LOBBY_WS_URL = 'wss://pico-db.fly.dev/emoji-mellee-lobby-v11';
+const GAME_WS_URL_PREFIX = 'wss://pico-db.fly.dev/emoji-mellee-game-v11-';
 
 const initialGameState: Omit<GameState, 'gameId' | 'lastUpdate'> = {
   hostId: null, guestId: null, players: {}, spectators: {},
@@ -74,7 +74,7 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
     const [isP2PickerOpen, setIsP2PickerOpen] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [lobbyStatus, setLobbyStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
+    const [lobbyStatus, setLobbyStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'failed'>('connecting');
 
     const lobbyWs = useRef<WebSocket | null>(null);
     const gameWs = useRef<WebSocket | null>(null);
@@ -90,6 +90,12 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
         if (lobbyWs.current && lobbyWs.current.readyState < 2) return;
         if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
         
+        if (reconnectAttempts.current >= 5) {
+            setLobbyStatus('failed');
+            console.error("Lobby connection failed after multiple attempts.");
+            return;
+        }
+
         setLobbyStatus('connecting');
         const ws = new WebSocket(LOBBY_WS_URL);
         lobbyWs.current = ws;
@@ -108,9 +114,9 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
         };
 
         const scheduleReconnect = () => {
-            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 15000);
             reconnectAttempts.current++;
-            console.log(`Lobby WS closed. Reconnecting in ${delay / 1000}s...`);
+            console.log(`Lobby WS closed. Attempt ${reconnectAttempts.current}. Reconnecting in ${delay / 1000}s...`);
             reconnectTimeout.current = setTimeout(connectToLobby, delay);
         };
 
@@ -374,9 +380,23 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
         return (
             <div className="animate-fade-in text-center p-4 max-w-lg mx-auto">
                 <h2 className="text-3xl font-bebas text-purple-300 tracking-wider">Lobby Online</h2>
-                <div className="h-6 mt-2">
+                <div className="h-12 mt-2 flex items-center justify-center">
                     {lobbyStatus === 'connecting' && <p className="text-yellow-400">Conectando ao lobby...</p>}
                     {lobbyStatus === 'disconnected' && <p className="text-red-400">Conexão perdida. Tentando reconectar...</p>}
+                    {lobbyStatus === 'failed' && (
+                        <div className="text-red-400 text-center">
+                            <p>Falha ao conectar ao lobby.</p>
+                            <button
+                                onClick={() => {
+                                    reconnectAttempts.current = 0;
+                                    connectToLobby();
+                                }}
+                                className="mt-1 px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm font-semibold"
+                            >
+                                Tentar Novamente
+                            </button>
+                        </div>
+                    )}
                     {error && <p className="text-red-400">{error}</p>}
                 </div>
                 <div className="my-6">
