@@ -729,7 +729,7 @@ const App: React.FC = () => {
 
         {view === 'home' ? (
             <div className="text-center animate-fade-in pt-12 sm:pt-8">
-                 <h1 className="text-6xl font-bebas tracking-wider text-purple-400">EMOJI MELLEE V1.6</h1>
+                 <h1 className="text-6xl font-bebas tracking-wider text-purple-400">EMOJI MELLEE V1.7</h1>
                  <p className="text-gray-400 mt-2">Um jogo de cartas híbrido criado por CAP Systems Jogos Híbridos</p>
 
                  <div className="mt-12 flex flex-col items-center gap-4 max-w-sm mx-auto">
