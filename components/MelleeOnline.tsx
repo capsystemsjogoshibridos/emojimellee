@@ -22,6 +22,14 @@ const initialGameState: Omit<GameState, 'gameId' | 'lastUpdate'> = {
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+/** Toast simples para mostrar code/reason dos WS */
+const Toast: React.FC<{ message: string; onClose: () => void }> = ({ message, onClose }) => (
+  <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-4 py-2 rounded shadow-lg z-50">
+    <div className="text-sm whitespace-pre-wrap">{message}</div>
+    <button className="ml-3 text-xs underline" onClick={onClose}>fechar</button>
+  </div>
+);
+
 const PlayerStatus: React.FC<{ player: 'P1' | 'P2', hp: number, animation: string, name?: string }> = ({ player, hp, animation, name }) => {
   const isP1 = player === 'P1';
   const colorClasses = isP1 ? 'bg-blue-600 border-blue-400' : 'bg-red-600 border-red-400';
@@ -74,11 +82,17 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lobbyStatus, setLobbyStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'failed'>('connecting');
+  const [toast, setToast] = useState<string | null>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 6000);
+  }, []);
 
   const lobbyWs = useRef<WebSocket | null>(null);
   const gameWs = useRef<WebSocket | null>(null);
   const heartbeatInterval = useRef<ReturnType<typeof setInterval> | null>(null); // lobby keepalive
-  const gameHeartbeat = useRef<ReturnType<typeof setInterval> | null>(null);     // game keepalive (novo)
+  const gameHeartbeat = useRef<ReturnType<typeof setInterval> | null>(null);     // game keepalive
   const battleProcessor = useRef<Promise<void> | null>(null);
   const hostStateRef = useRef(gameState);
   const reconnectTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -118,19 +132,22 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
       reconnectTimeout.current = setTimeout(connectToLobby, delay);
     };
 
-    ws.onclose = () => {
+    ws.onclose = (ev) => {
+      console.warn("Lobby WS closed", ev.code, ev.reason, ev.wasClean);
       if (lobbyWs.current === ws && ws.onclose) {
         lobbyWs.current = null;
         setLobbyStatus('disconnected');
+        showToast(`Lobby fechado (code ${ev.code})\n${ev.reason || 'sem reason'}`);
         scheduleReconnect();
       }
     };
 
     ws.onerror = (err) => {
       console.error('Lobby WS error', err);
+      showToast('Erro no socket do lobby (veja o console).');
       // onclose será disparado pelo browser.
     };
-  }, []);
+  }, [showToast]);
 
   const sendToLobby = useCallback((message: object) => {
     if (lobbyWs.current?.readyState === WebSocket.OPEN) {
@@ -176,19 +193,21 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
   }, [myId, connectToLobby, cleanupConnections]);
 
   const handleCreateGame = useCallback(() => {
-    if (lobbyWs.current?.readyState !== WebSocket.OPEN) {
-      setError("Não foi possível conectar ao lobby. Verifique sua conexão.");
-      setTimeout(() => setError(null), 3000);
-      return;
-    }
-
+    // permitir criar jogo mesmo sem lobby conectado
     setMyRole('host');
-    // ID legível + sufijo curto para evitar colisão; usar codificado só no path do WS
-    const baseId = `${pseudonym}-${myId.slice(-4)}`;
-    const encodedId = encodeURIComponent(baseId); // evita quebrar URL com espaços/emoji :contentReference[oaicite:3]{index=3}
-    const me: OnlinePlayer = { id: myId, pseudonym };
 
-    const newGame: GameState = { ...initialGameState, gameId: baseId, hostId: myId, players: { [myId]: me }, lastUpdate: Date.now() };
+    // ID legível + sufixo curto para evitar colisão; codifique no path do WS
+    const baseId = `${pseudonym}-${myId.slice(-4)}`;
+    const encodedId = encodeURIComponent(baseId); // evita quebrar URL com espaços/emoji
+
+    const me: OnlinePlayer = { id: myId, pseudonym };
+    const newGame: GameState = {
+      ...initialGameState,
+      gameId: baseId,
+      hostId: myId,
+      players: { [myId]: me },
+      lastUpdate: Date.now()
+    };
 
     setIsConnecting(true);
     const ws = new WebSocket(GAME_WS_URL_PREFIX + encodedId);
@@ -202,7 +221,7 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
       const lobbyInfo: LobbyInfo = { gameId: baseId, hostPseudonym: pseudonym, status: 'waiting', lastUpdate: Date.now() };
       sendToLobby({ action: 'CREATE', lobby: lobbyInfo });
 
-      // heartbeat do lobby já existia; mantemos
+      // heartbeat do lobby (se conectado)
       if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
       heartbeatInterval.current = setInterval(() => {
         if (lobbyWs.current?.readyState === WebSocket.OPEN) {
@@ -210,15 +229,15 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
         }
       }, 5000);
 
-      // NOVO: heartbeat no socket do jogo (mensagem app-level)
+      // heartbeat do jogo (app-level)
       if (gameHeartbeat.current) clearInterval(gameHeartbeat.current);
       gameHeartbeat.current = setInterval(() => {
         if (gameWs.current?.readyState === WebSocket.OPEN) {
-          gameWs.current.send(JSON.stringify({ type: 'PING', t: Date.now() })); // browsers não têm ping nativo; use app-heartbeat :contentReference[oaicite:4]{index=4}
+          gameWs.current.send(JSON.stringify({ type: 'PING', t: Date.now() }));
         }
       }, 25000);
 
-      // NOVO: publica estado inicial para o servidor/espelhos
+      // publica estado inicial no servidor do jogo
       ws.send(JSON.stringify({ state: newGame }));
     };
 
@@ -242,15 +261,17 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (ev) => {
       if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
       if (gameHeartbeat.current) clearInterval(gameHeartbeat.current);
       sendToLobby({ action: 'DELETE', gameId: baseId });
+      showToast(`Jogo fechado (code ${ev.code})\n${ev.reason || 'sem reason'}`);
       goBackToLobby();
     };
 
     ws.onerror = () => {
       setError('Não foi possível criar a sala. O nome pode já estar em uso.');
+      showToast('Erro no socket do jogo (host).');
       goBackToLobby();
     };
   }, [myId, pseudonym, sendToLobby, goBackToLobby]);
@@ -259,7 +280,7 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
     setMyRole('guest');
     setIsConnecting(true);
     const { gameId } = gameToJoin;
-    const encodedId = encodeURIComponent(gameId); // ao conectar, sempre codifique o path :contentReference[oaicite:5]{index=5}
+    const encodedId = encodeURIComponent(gameId);
 
     const ws = new WebSocket(GAME_WS_URL_PREFIX + encodedId);
     gameWs.current = ws;
@@ -269,7 +290,7 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
       setView('playing');
       const me: OnlinePlayer = { id: myId, pseudonym };
       ws.send(JSON.stringify({ action: { type: 'JOIN', payload: me } }));
-      // heartbeat no cliente convidado também
+
       if (gameHeartbeat.current) clearInterval(gameHeartbeat.current);
       gameHeartbeat.current = setInterval(() => {
         if (gameWs.current?.readyState === WebSocket.OPEN) {
@@ -284,8 +305,17 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
       else if (msg.action) setGameState(cur => cur ? ({ ...cur, action: msg.action }) : cur);
     };
 
-    ws.onclose = () => { alert('O anfitrião desconectou.'); goBackToLobby(); };
-    ws.onerror = () => { setError('Não foi possível conectar à sala.'); goBackToLobby(); };
+    ws.onclose = (ev) => {
+      showToast(`Jogo fechado (code ${ev.code})\n${ev.reason || 'sem reason'}`);
+      alert('O anfitrião desconectou.');
+      goBackToLobby();
+    };
+
+    ws.onerror = () => {
+      setError('Não foi possível conectar à sala.');
+      showToast('Erro no socket do jogo (guest).');
+      goBackToLobby();
+    };
   }, [myId, pseudonym, goBackToLobby]);
 
   // Host Game Loop
@@ -389,7 +419,7 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
       newState.lastUpdate = Date.now();
       setGameState(newState);
       if (gameWs.current?.readyState === WebSocket.OPEN) {
-        gameWs.current.send(JSON.stringify({ state: newState })); // evite .send() se CONNECTING :contentReference[oaicite:6]{index=6}
+        gameWs.current.send(JSON.stringify({ state: newState }));
       }
     }
   }, [gameState, myRole, savedCards, onRoundEnd]);
@@ -426,7 +456,7 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
       }
       setGameState(newState);
       if (gameWs.current.readyState === WebSocket.OPEN) {
-        gameWs.current.send(JSON.stringify({ state: newState })); // só envia se OPEN :contentReference[oaicite:7]{index=7}
+        gameWs.current.send(JSON.stringify({ state: newState }));
       }
     } else if (isMyTurnAsGuest && Array.from(gameState.p2Emoji).length < 3) {
       const action = { type: 'EMOJI_SELECT' as const, payload: emoji };
@@ -436,9 +466,12 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
     }
   };
 
+  // Renders
   if (view === 'lobby') {
     return (
       <div className="animate-fade-in text-center p-4 max-w-lg mx-auto">
+        {toast && <Toast message={toast} onClose={() => setToast(null)} />}
+
         <h2 className="text-3xl font-bebas text-purple-300 tracking-wider">Lobby Online</h2>
         <div className="h-12 mt-2 flex items-center justify-center">
           {lobbyStatus === 'connecting' && <p className="text-yellow-400">Conectando ao lobby...</p>}
@@ -459,15 +492,17 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
           )}
           {error && <p className="text-red-400">{error}</p>}
         </div>
+
         <div className="my-6">
           <button
             onClick={handleCreateGame}
-            disabled={isConnecting || lobbyStatus !== 'connected'}
+            disabled={isConnecting}  // liberado mesmo sem lobby conectado
             className="w-full px-8 py-4 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-bebas text-2xl tracking-wider disabled:bg-gray-500 disabled:cursor-not-allowed"
           >
             {isConnecting && myRole === 'host' ? 'Criando...' : 'Criar Novo Jogo'}
           </button>
         </div>
+
         <div className="space-y-3">
           <h3 className="text-xl font-bebas text-gray-400">Jogos Disponíveis</h3>
           {lobbyStatus === 'connected' && availableGames.length > 0 ? availableGames.map(game => (
@@ -497,6 +532,8 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
   if (view === 'hosting') {
     return (
       <div className="animate-fade-in text-center p-8">
+        {toast && <Toast message={toast} onClose={() => setToast(null)} />}
+
         <h2 className="text-3xl font-bebas text-purple-300">Aguardando Oponente...</h2>
         <p className="text-gray-400 mt-2">Sua sala <span className="font-bold text-white">{pseudonym}</span> está visível no lobby.</p>
         <div className="lds-ellipsis"><div></div><div></div><div></div><div></div></div>
@@ -509,6 +546,8 @@ const MelleeOnline: React.FC<MelleeOnlineProps> = ({ savedCards, onRoundEnd, pse
   if (view === 'playing' && gameState) {
     return (
       <div className="animate-fade-in text-center p-4">
+        {toast && <Toast message={toast} onClose={() => setToast(null)} />}
+
         <button onClick={goBackToLobby} className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 z-10">
           <ArrowLeftIcon className="w-4 h-4" /> Sair
         </button>
